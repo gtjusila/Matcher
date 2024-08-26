@@ -33,6 +33,7 @@ def next_round():
 
 def compute_leaderboard(matches):
     leaderboard = {}
+    opponent_points = {}
 
     for match in matches:
         team1 = match['team1']
@@ -41,9 +42,11 @@ def compute_leaderboard(matches):
         score2 = match['score2']
 
         if team1 not in leaderboard:
-            leaderboard[team1] = {"Wins": 0, "Draws": 0, "Losses": 0, "Goals For": 0, "Goals Against": 0, "Goal Difference": 0, "Points": 0}
+            leaderboard[team1] = {"Wins": 0, "Draws": 0, "Losses": 0, "Goals For": 0, "Goals Against": 0, "Goal Difference": 0, "Points": 0, "Tiebreak Factor": 0}
+            opponent_points[team1] = []
         if team2 not in leaderboard:
-            leaderboard[team2] = {"Wins": 0, "Draws": 0, "Losses": 0, "Goals For": 0, "Goals Against": 0, "Goal Difference": 0, "Points": 0}
+            leaderboard[team2] = {"Wins": 0, "Draws": 0, "Losses": 0, "Goals For": 0, "Goals Against": 0, "Goal Difference": 0, "Points": 0, "Tiebreak Factor": 0}
+            opponent_points[team2] = []
 
         if match['round'] == tournament_state['current_round']:
             continue
@@ -52,9 +55,6 @@ def compute_leaderboard(matches):
         leaderboard[team1]["Goals Against"] += score2
         leaderboard[team2]["Goals For"] += score2
         leaderboard[team2]["Goals Against"] += score1
-
-        leaderboard[team1]["Goal Difference"] = leaderboard[team1]["Goals For"] - leaderboard[team1]["Goals Against"]
-        leaderboard[team2]["Goal Difference"] = leaderboard[team2]["Goals For"] - leaderboard[team2]["Goals Against"]
 
         if score1 > score2:
             leaderboard[team1]["Wins"] += 1
@@ -66,14 +66,32 @@ def compute_leaderboard(matches):
             leaderboard[team1]["Draws"] += 1
             leaderboard[team2]["Draws"] += 1
 
-        leaderboard[team1]["Points"] = leaderboard[team1]["Wins"] * 3 + leaderboard[team1]["Draws"]
-        leaderboard[team2]["Points"] = leaderboard[team2]["Wins"] * 3 + leaderboard[team2]["Draws"]
+    # Calculate points and goal difference, and collect opponent points
+    for team in leaderboard:
+        leaderboard[team]["Goal Difference"] = leaderboard[team]["Goals For"] - leaderboard[team]["Goals Against"]
+        leaderboard[team]["Points"] = leaderboard[team]["Wins"] * 3 + leaderboard[team]["Draws"]
     
+    # Calculate tiebreak factor
+    for match in matches:
+        if match['round'] != tournament_state['current_round']:
+            team1 = match['team1']
+            team2 = match['team2']
+            leaderboard[team1]["Tiebreak Factor"] += leaderboard[team2]["Points"]
+            leaderboard[team2]["Tiebreak Factor"] += leaderboard[team1]["Points"]
+
+    # Convert the leaderboard dictionary to a DataFrame
     leaderboard_df = pd.DataFrame(leaderboard).T
-    leaderboard_df = leaderboard_df.sort_values(by=["Points", "Goal Difference", "Goals For"], ascending=[False, False, False ])
+
+    # Sort the DataFrame in the specified order
+    leaderboard_df = leaderboard_df.sort_values(
+        by=["Wins", "Draws", "Losses", "Goals For", "Goals Against", "Goal Difference", "Tiebreak Factor", "Points"],
+        ascending=[False, False, True, False, True, False, False, False]
+    )
+
+    # Reorder the columns
+    leaderboard_df = leaderboard_df[["Wins", "Draws", "Losses", "Goals For", "Goals Against", "Goal Difference", "Tiebreak Factor", "Points"]]
 
     return leaderboard_df
-
 
 def decide_matchup(teams, round_num, past_matches, leaderboard):
     """Decide the matchups for a round considering past matchups and the leaderboard."""
@@ -130,10 +148,6 @@ def decide_matchup(teams, round_num, past_matches, leaderboard):
         # Add nodes for all teams in the group
         for team in group:
             G.add_node(team['teamname'])
-
-        # Print the list of all nodes (teams) at this stage
-        print(f"Stage: Group with {points} points, Priority Level {priority_level}")
-        print("Nodes:", list(G.nodes))
 
         # Add edges for teams that haven't played against each other
         for i in range(len(group)):
