@@ -140,7 +140,6 @@ def decide_matchup(teams, round_num, past_matches, leaderboard):
     new_matches = []
     sorted_groups = sorted(groups.items(), key=lambda x: -x[0])  # Sort by points descending
     priority_teams = set()  # Keep track of demoted teams
-    priority_level = 1  # Start with 1 for the top group
 
     for idx, (points, group) in enumerate(sorted_groups):
         G = nx.Graph()
@@ -234,10 +233,16 @@ def page_1():
         tournament_state['current_round'] = 1
         next_page()
 
+import random
+
 def page_2():
     st.title(f"Tournament Round {tournament_state['current_round']} Setup")
     st.header("Match Setup")
 
+    # Ensure referee counts are tracked in session state
+    if 'referee_counts' not in tournament_state:
+        tournament_state['referee_counts'] = {team: 0 for team in tournament_state['teams']}
+    
     is_decided = st.checkbox(f"Is the Round {tournament_state['current_round']} match decided?", value=False)
     
     if is_decided:
@@ -253,10 +258,21 @@ def page_2():
             with col2:
                 team2 = st.selectbox(f"Match {i//2 + 1} - Team 2", tournament_state['teams'], index=i + 1, key=f"match_{i}_team2_round_{tournament_state['current_round']}")
             
+            # Assign a referee with random perturbation
+            potential_referees = [
+                (team, tournament_state['referee_counts'][team] + random.uniform(0, 0.1)) 
+                for team in tournament_state['teams'] 
+                if team not in [team1, team2] and tournament_state['referee_counts'][team] < 2
+            ]
+            
+            referee = min(potential_referees, key=lambda x: x[1])[0]
+            tournament_state['referee_counts'][referee] += 1
+
             matches.append({
                 'round': tournament_state['current_round'],
                 'team1': team1,
                 'team2': team2,
+                'referee': referee,
                 'score1': 0,
                 'score2': 0
             })
@@ -273,16 +289,31 @@ def page_2():
                 tournament_state['matches'] += matches  # Append to the list of all matches
                 next_page()
         else:
+            new_matches = []
             if tournament_state['current_round'] == 1:
                 # First round: Shuffle the teams and match 1 vs 2, 3 vs 4, etc.
                 shuffled_teams = tournament_state['teams'].copy()
                 random.shuffle(shuffled_teams)
-                new_matches = []
                 for i in range(0, len(shuffled_teams), 2):
+                    team1 = shuffled_teams[i]
+                    team2 = shuffled_teams[i + 1]
+
+                    # Assign a referee with random perturbation
+                    potential_referees = [
+                        (team, tournament_state['referee_counts'][team] + random.uniform(0, 0.1)) 
+                        for team in tournament_state['teams'] 
+                        if team not in [team1, team2] and tournament_state['referee_counts'][team] < 2
+                    ]
+                    
+                    referee = min(potential_referees, key=lambda x: x[1])[0]
+                    tournament_state['referee_counts'][referee] += 1
+
                     new_matches.append({
                         'round': 1,
-                        'team1': shuffled_teams[i],
-                        'team2': shuffled_teams[i + 1],
+                        'team1': team1,
+                        'team2': team2,
+                        'referee': referee,
+                        'order': i//2,
                         'score1': 0,
                         'score2': 0
                     })
@@ -291,14 +322,44 @@ def page_2():
                 leaderboard_df = compute_leaderboard(tournament_state['matches'])
                 past_matches = tournament_state['matches']
                 new_matches = decide_matchup(tournament_state['teams'], round_num=tournament_state['current_round'], past_matches=past_matches, leaderboard=leaderboard_df)
-            
+
+                while True:
+                    last_match = []
+                    for match in tournament_state['matches']:
+                        if (match['round'] == tournament_state['current_round'] - 1) and (match['order'] == 4):
+                            last_match.append(match["team1"])
+                            last_match.append(match["team2"])
+
+                    random.shuffle(new_matches)
+                    new_matches = [{**match, 'order': idx} for idx, match in enumerate(new_matches)]
+                    if new_matches[0]['team1'] in last_match or new_matches[0]['team2'] in last_match:
+                        continue
+                    break
+
+                # Assign referees for new matches with random perturbation
+                for match in new_matches:
+                    team1 = match['team1']
+                    team2 = match['team2']
+
+                    potential_referees = [
+                        (team, tournament_state['referee_counts'][team] + random.uniform(0, 0.1)) 
+                        for team in tournament_state['teams'] 
+                        if team not in [team1, team2] and tournament_state['referee_counts'][team] < 2
+                    ]
+                    
+                    referee = min(potential_referees, key=lambda x: x[1])[0]
+                    tournament_state['referee_counts'][referee] += 1
+
+                    match['referee'] = referee
+
             tournament_state['matches'] += new_matches  # Append the new matches
+            print(new_matches)
             next_page()
 
     if tournament_state['validation_error']:
         st.error("Each team must be selected exactly once.")
 
-# Page 3: Show Matchups and Leaderboard
+
 def page_3():
     st.title(f"Tournament Round {tournament_state['current_round']} - Matchups and Leaderboard")
     st.header("Matchups and Leaderboard")
@@ -307,11 +368,15 @@ def page_3():
         st.error("No matches have been set up. Please go back to set up matches.")
         return
 
-    # Show matchups for the current round
+    # Show matchups for the current round in the specified order
     st.subheader(f"Round {tournament_state['current_round']} Matchups")
-    for match in tournament_state['matches']:
-        if match['round'] == tournament_state['current_round']:
-            st.markdown(f"**{match['team1']} vs {match['team2']}**")
+    current_round_matches = sorted(
+        [match for match in tournament_state['matches'] if match['round'] == tournament_state['current_round']],
+        key=lambda x: x['order']
+    )
+    for match in current_round_matches:
+        st.markdown(f"**Match {match['order']+1}: {match['team1']} vs {match['team2']}**")
+        st.markdown(f"*Referee: {match['referee']}*")
 
     # Compute and display the leaderboard
     st.subheader("Leaderboard")
@@ -321,7 +386,20 @@ def page_3():
     if st.button("Next"):
         next_page()
 
-# Page 4: Input Scores for Matches
+# Assuming you have access to @dialog decorator
+@st.dialog("Confirm Scores")
+def confirm_scores_dialog(current_round_matches):
+    st.subheader("Confirm Scores")
+    st.write("Please confirm the following scores:")
+    
+    for match in current_round_matches:
+        st.write(f"{match['team1']} {match['score1']} - {match['score2']} {match['team2']}")
+    
+    if st.button("Confirm"):
+        next_round()
+    if st.button("Cancel"):
+        st.rerun()
+
 def page_4():
     st.title(f"Tournament Round {tournament_state['current_round']} - Input Scores")
     st.header("Input Scores")
@@ -332,17 +410,21 @@ def page_4():
 
     st.subheader("Enter the scores for each match:")
     
-    for i, match in enumerate(tournament_state['matches']):
-        if match['round'] == tournament_state['current_round']:
-            st.markdown(f"### {match['team1']} vs {match['team2']}")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                match['score1'] = st.number_input(f"Score for {match['team1']}", min_value=0, key=f"score1_{i}_round_{tournament_state['current_round']}", value=match['score1'])
-            
-            with col2:
-                match['score2'] = st.number_input(f"Score for {match['team2']}", min_value=0, key=f"score2_{i}_round_{tournament_state['current_round']}", value=match['score2'])
+    current_round_matches = sorted(
+        [match for match in tournament_state['matches'] if match['round'] == tournament_state['current_round']],
+        key=lambda x: x['order']
+    )
+    
+    for i, match in enumerate(current_round_matches):
+        st.markdown(f"### Match {match['order']+1}: {match['team1']} vs {match['team2']}")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            match['score1'] = st.number_input(f"Score for {match['team1']}", min_value=0, key=f"score1_{i}_round_{tournament_state['current_round']}", value=match['score1'])
+        
+        with col2:
+            match['score2'] = st.number_input(f"Score for {match['team2']}", min_value=0, key=f"score2_{i}_round_{tournament_state['current_round']}", value=match['score2'])
 
     col1, col2 = st.columns(2)
     
@@ -355,8 +437,29 @@ def page_4():
             st.rerun()
 
     with col2:
-        if st.button("Next"):
-            next_round()
+        if st.button("Submit Scores"):
+            confirm_scores_dialog(current_round_matches)
+
+def page_5():
+    st.title("Tournament Completed")
+    st.header("Final Leaderboard")
+
+    # Compute and display the final leaderboard
+    leaderboard_df = compute_leaderboard(tournament_state['matches'])
+    st.table(leaderboard_df)
+
+    # Recap of all matches
+    st.subheader("Match Recap")
+    for round_num in range(1, tournament_state['current_round']):
+        st.write(f"### Round {round_num} Matches:")
+        round_matches = sorted(
+            [match for match in tournament_state['matches'] if match['round'] == round_num],
+            key=lambda x: x['order']
+        )
+        for match in round_matches:
+            st.write(f"{match['team1']} {match['score1']} - {match['score2']} {match['team2']}")
+
+    st.write("### Thank you for participating in the tournament!")
 
 st.set_page_config(
     page_title="Matchmaker",  # Title that appears in the browser tab
@@ -374,7 +477,4 @@ elif tournament_state['page'] == 3:
 elif tournament_state['page'] == 4:
     page_4()
 elif tournament_state['page'] == 5:
-    st.title("Tournament Completed")
-    st.header("Final Leaderboard")
-    leaderboard_df = compute_leaderboard(tournament_state['matches'])
-    st.table(leaderboard_df)
+    page_5()
