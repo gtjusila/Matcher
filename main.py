@@ -344,6 +344,12 @@ def page_4():
         if st.button("Next"):
             next_round()
 
+st.set_page_config(
+    page_title="Matchmaker",  # Title that appears in the browser tab
+    page_icon="🏆",  # Emoji or image file path (can be an emoji or a file path to an image)
+    layout="centered",  # Layout: "centered" or "wide"
+    initial_sidebar_state="auto"  # Sidebar: "auto", "expanded", "collapsed"
+)
 # Main logic to handle page transitions
 if tournament_state['page'] == 1:
     page_1()
