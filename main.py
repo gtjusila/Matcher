@@ -84,8 +84,8 @@ def compute_leaderboard(matches):
 
     # Sort the DataFrame in the specified order
     leaderboard_df = leaderboard_df.sort_values(
-        by=["Wins", "Draws", "Losses", "Goals For", "Goals Against", "Goal Difference", "Tiebreak Factor", "Points"],
-        ascending=[False, False, True, False, True, False, False, False]
+        by=["Points", "Goal Difference", "Goals For", "Tiebreak Factor"],
+        ascending=[False, False, False, False]
     )
 
     # Reorder the columns
@@ -239,10 +239,6 @@ def page_2():
     st.title(f"Tournament Round {tournament_state['current_round']} Setup")
     st.header("Match Setup")
 
-    # Ensure referee counts are tracked in session state
-    if 'referee_counts' not in tournament_state:
-        tournament_state['referee_counts'] = {team: 0 for team in tournament_state['teams']}
-    
     is_decided = st.checkbox(f"Is the Round {tournament_state['current_round']} match decided?", value=False)
     
     if is_decided:
@@ -258,21 +254,12 @@ def page_2():
             with col2:
                 team2 = st.selectbox(f"Match {i//2 + 1} - Team 2", tournament_state['teams'], index=i + 1, key=f"match_{i}_team2_round_{tournament_state['current_round']}")
             
-            # Assign a referee with random perturbation
-            potential_referees = [
-                (team, tournament_state['referee_counts'][team] + random.uniform(0, 0.1)) 
-                for team in tournament_state['teams'] 
-                if team not in [team1, team2] and tournament_state['referee_counts'][team] < 2
-            ]
             
-            referee = min(potential_referees, key=lambda x: x[1])[0]
-            tournament_state['referee_counts'][referee] += 1
 
             matches.append({
                 'round': tournament_state['current_round'],
                 'team1': team1,
                 'team2': team2,
-                'referee': referee,
                 'order': i,
                 'score1': 0,
                 'score2': 0
@@ -299,21 +286,10 @@ def page_2():
                     team1 = shuffled_teams[i]
                     team2 = shuffled_teams[i + 1]
 
-                    # Assign a referee with random perturbation
-                    potential_referees = [
-                        (team, tournament_state['referee_counts'][team] + random.uniform(0, 0.1)) 
-                        for team in tournament_state['teams'] 
-                        if team not in [team1, team2] and tournament_state['referee_counts'][team] < 2
-                    ]
-                    
-                    referee = min(potential_referees, key=lambda x: x[1])[0]
-                    tournament_state['referee_counts'][referee] += 1
-
                     new_matches.append({
                         'round': 1,
                         'team1': team1,
                         'team2': team2,
-                        'referee': referee,
                         'order': i//2,
                         'score1': 0,
                         'score2': 0
@@ -337,21 +313,10 @@ def page_2():
                         continue
                     break
 
-                # Assign referees for new matches with random perturbation
+                # Assign s for new matches with random perturbation
                 for match in new_matches:
                     team1 = match['team1']
                     team2 = match['team2']
-
-                    potential_referees = [
-                        (team, tournament_state['referee_counts'][team] + random.uniform(0, 0.1)) 
-                        for team in tournament_state['teams'] 
-                        if team not in [team1, team2] and tournament_state['referee_counts'][team] < 2
-                    ]
-                    
-                    referee = min(potential_referees, key=lambda x: x[1])[0]
-                    tournament_state['referee_counts'][referee] += 1
-
-                    match['referee'] = referee
 
             tournament_state['matches'] += new_matches  # Append the new matches
             print(new_matches)
@@ -377,7 +342,6 @@ def page_3():
     )
     for match in current_round_matches:
         st.markdown(f"**Match {match['order']+1}: {match['team1']} vs {match['team2']}**")
-        st.markdown(f"*Referee: {match['referee']}*")
 
     # Compute and display the leaderboard
     st.subheader("Leaderboard")
