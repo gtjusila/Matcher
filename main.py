@@ -273,6 +273,7 @@ def page_2():
                 'team1': team1,
                 'team2': team2,
                 'referee': referee,
+                'order': i,
                 'score1': 0,
                 'score2': 0
             })
